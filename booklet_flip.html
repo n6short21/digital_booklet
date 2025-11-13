@@ -130,20 +130,43 @@
     lastBtn.disabled  = curr>=total;
     pageLabel.textContent = `Page ${curr} / ${total}`;
   }
-
-  function bestFitZoom(){
-    // Fit ONE page into flipRoot (no inner scrollbars)
+  
+  function availableSize() {
     const pad = 24;
     const cw = Math.max(200, flipRoot.clientWidth  - pad);
-    const ch = Math.max(200, flipRoot.clientHeight - pad - 56); // leave a bit for the dock
-    const z = Math.min(cw / base.w, ch / base.h);
-    setZoom(z);
+    const ch = Math.max(200, flipRoot.clientHeight - pad);
+  
+    // Subtract the real dock height (could be 1 or 2 rows on mobile)
+    const dock = document.getElementById('dock');
+    const dockH = dock ? dock.getBoundingClientRect().height : 0;
+  
+    // Also subtract the tiny status line if you still show it
+    const status = document.getElementById('status');
+    const statusH = status ? status.getBoundingClientRect().height : 0;
+  
+    return { cw, ch: ch - dockH - statusH - 8 };
   }
-
-  function setZoom(z){
-    zoom = clamp(z, 0.5, 2.5);
-    zoomLabel.textContent = Math.round(zoom*100)+"%";
+  
+  // zoom is now *relative* to the true fit scale, so we never overshoot
+  function bestFitZoom() {
+    const { cw, ch } = availableSize();
+    const fit = Math.min(cw / base.w, ch / base.h);
+    setZoom(fit);              // setZoom expects an absolute scale
+    // show “Fit” instead of 100% when exactly at fit
+    const pct = Math.round((fit / fit) * 100);
+    zoomLabel.textContent = (Math.abs(zoom - fit) < 0.01) ? "Fit" : `${pct}%`;
+  }
+  
+  // Keep zoom clamped but always apply *after* measuring real available size
+  function setZoom(z) {
+    // Never smaller than 0.5× fit and never larger than 2.5× fit
+    const { cw, ch } = availableSize();
+    const fit = Math.min(cw / base.w, ch / base.h);
+    const minZ = 0.5 * fit, maxZ = 2.5 * fit;
+  
+    zoom = Math.max(minZ, Math.min(maxZ, z));
     if (!pageFlip) return;
+  
     pageFlip.update({
       width:  Math.round(base.w * zoom),
       height: Math.round(base.h * zoom),
@@ -151,6 +174,10 @@
       showCover: false,
       size: "fixed"
     });
+  
+    // Label
+    const pct = Math.round((zoom / fit) * 100);
+    zoomLabel.textContent = (Math.abs(zoom - fit) < 0.01) ? "Fit" : `${pct}%`;
   }
 
   async function renderPdfPageToImage(pdf, n){
@@ -191,7 +218,14 @@
       pageFlip.loadFromImages(imgs);
       pageFlip.on("flip", e => updatePager(e.data + 1));
       updatePager(1);
-      bestFitZoom();
+      const refit = () => bestFitZoom();
+      window.addEventListener("resize", refit);
+      window.addEventListener("orientationchange", () => setTimeout(refit, 120));
+      
+      // Optional: refit if fonts load and change dock height
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(refit);
+      }
       setStatus("");
 
       // pager actions (Staples-like)
