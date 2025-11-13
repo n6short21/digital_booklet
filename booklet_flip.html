@@ -242,7 +242,8 @@
       // Zoom
       fitBtn.onclick    =()=>bestFitZoom();
       zoomInBtn.onclick =()=>setZoom(zoom+0.1);
-      zoomOutBtn.onclick()=>setZoom(zoom-0.1);
+      zoomOutBtn.onclick = () => setZoom(zoom - 0.1);
+
 
       // Refit on resize/orientation/font settle
       const refit=()=>bestFitZoom();
