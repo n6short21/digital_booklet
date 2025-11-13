@@ -2,50 +2,55 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Flip Booklet (Vertical Up/Down)</title>
+<title>Vertical Flip Booklet (Single Page)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/css/page-flip.css" />
 <style>
-  :root{ --bg:#0f172a; --panel:#111827; --muted:#9ca3af; --text:#e5e7eb; --accent:#60a5fa; }
+  :root{ --bg:#0f172a; --panel:#111827; --muted:#9ca3af; --text:#e5e7eb; --accent:#60a5fa; --s:1; }
   *{ box-sizing:border-box }
-  html,body{ height:100%; margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial }
-
+  html,body{ height:100%; margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial }
   .app{ min-height:100svh; display:grid; grid-template-rows:auto 1fr auto; gap:8px }
-  header,footer{ background:var(--panel); padding:8px 12px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #1f2937 }
-  footer{ border-bottom:0; border-top:1px solid #1f2937 }
-  .meta{ color:#9ca3af; font-size:13px }
 
-  .stage{ display:grid; place-items:center; padding:10px }
-  /* Outer frame (NOT rotated) */
-  #frame{
+  header, footer{
+    background:var(--panel); padding:8px 12px;
+    display:flex; align-items:center; justify-content:space-between
+  }
+  header{ border-bottom:1px solid #1f2937 }
+  footer{ border-top:1px solid #1f2937 }
+  .meta{ color:var(--muted); font-size:13px }
+
+  .stage{ position:relative; display:grid; place-items:center; padding:10px }
+  /* Outer container fits the iframe; no internal scrollbars */
+  #flipRoot{
     position:relative;
-    width:min(1100px, 96vw);
+    width:min(1100px,96vw);
     height:clamp(380px, calc(100svh - 200px), 900px);
     background:#0b1220; border:1px solid #1f2937; border-radius:12px;
     box-shadow:0 10px 30px rgba(0,0,0,.4), inset 0 0 0 1px #1f2937;
     overflow:hidden;
   }
-  /* Rotated flip root (so left/right becomes up/down) */
-  #flipRoot{
-    position:absolute; inset:0;
-    transform: rotate(90deg);
-    transform-origin: center center;
-    display:flex; align-items:center; justify-content:center;
-    pointer-events:none; /* no dragging/swiping */
+
+  /* PageFlip “book” is rotated 90° so the animation reads vertical */
+  #book{
+    position:absolute; left:50%; top:50%;
+    transform: translate(-50%,-50%) rotate(90deg) scale(var(--s));
+    transform-origin:center center;
+    pointer-events:none; /* disable drag/swipe; we use our own click zones */
+    will-change:transform;
   }
-  /* Counter-rotate internal content so pages look upright */
-  #flipRoot .stf__wrapper,
-  #flipRoot .stf__block,
-  #flipRoot .stf__page,
-  #flipRoot .stf__item,
-  #flipRoot img{
+  /* Counter-rotate page content so text is upright */
+  #book .stf__item .stf__block img{
     transform: rotate(-90deg);
-    transform-origin: center center;
+    transform-origin:center center;
+    display:block;
+    max-width:none; /* avoid page-width clipping after rotation */
   }
-  /* Click zones: TOP = prev, BOTTOM = next */
-  .vz{ position:absolute; left:0; width:100%; height:50%; z-index:4; }
-  #zoneTop{ top:0; cursor:n-resize; }
-  #zoneBottom{ bottom:0; cursor:s-resize; }
+
+  /* Click overlay for up/down navigation */
+  .click-zone{ position:absolute; inset:0; display:grid; grid-template-rows:1fr 1fr; z-index:3; }
+  .zone{ width:100%; }
+  .zone-top{ cursor:n-resize; }
+  .zone-bottom{ cursor:s-resize; }
 
   .controls{
     display:flex; justify-content:center; gap:10px; padding:6px 10px 16px;
@@ -56,131 +61,90 @@
   }
   .btn:hover{ border-color:var(--accent) }
 
-  .status{ position:absolute; left:12px; bottom:12px; color:#9ca3af; font-size:13px; z-index:5 }
+  @media (max-width:900px){ #flipRoot{ height:clamp(360px, calc(100svh - 230px), 780px) } }
+  @media (max-width:600px){ #flipRoot{ height:clamp(320px, calc(100svh - 250px), 680px) } }
 </style>
 </head>
 <body>
 <div class="app">
   <header>
     <div><strong>Flip Booklet</strong> <span class="meta">· click top/bottom to turn</span></div>
-    <div class="meta"><span id="pageLabel">—</span> · <span id="zoomLabel">100%</span></div>
+    <div><span class="meta" id="pageLabel">—</span></div>
   </header>
 
   <div class="stage">
-    <div id="frame">
-      <div id="flipRoot"><div id="book"></div></div>
-      <!-- Vertical click zones -->
-      <div id="zoneTop" class="vz" aria-hidden="true"></div>
-      <div id="zoneBottom" class="vz" aria-hidden="true"></div>
-      <div class="status" id="status">Loading…</div>
+    <div id="flipRoot">
+      <div id="book"></div>
+      <div class="click-zone" aria-hidden="true">
+        <div class="zone zone-top" id="zoneTop"></div>
+        <div class="zone zone-bottom" id="zoneBottom"></div>
+      </div>
+      <div class="meta" id="status" style="position:absolute;left:12px;top:10px;">Loading…</div>
     </div>
   </div>
 
   <div class="controls">
-    <button class="btn" id="prevBtn">⬆ Prev</button>
+    <button class="btn" id="prevBtn">⟵ Prev</button>
     <button class="btn" id="fitBtn">Fit</button>
-    <button class="btn" id="zoomOutBtn">–</button>
-    <button class="btn" id="zoomInBtn">+</button>
-    <button class="btn" id="nextBtn">Next ⬇</button>
+    <button class="btn" id="nextBtn">Next ⟶</button>
   </div>
 
   <footer>
-    <span class="meta">Single page on tablet/phone; spread on wide screens</span>
-    <span class="meta">Use <code>?src=your.pdf</code></span>
+    <span class="meta">Single-page vertical flip · Use <code>?src=your.pdf</code></span>
+    <span class="meta" id="zoomNote">Auto-fit</span>
   </footer>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
 <script>
 (function(){
   const q = new URLSearchParams(location.search);
   const DEFAULT_SRC = q.get("src") || "Sermon.pdf";
 
-  const frame = document.getElementById("frame");
   const flipRoot = document.getElementById("flipRoot");
-  const bookEl = document.getElementById("book");
+  const bookEl   = document.getElementById("book");
   const statusEl = document.getElementById("status");
-  const pageLabel = document.getElementById("pageLabel");
-  const zoomLabel = document.getElementById("zoomLabel");
-
-  const prevBtn = document.getElementById("prevBtn");
-  const nextBtn = document.getElementById("nextBtn");
-  const fitBtn  = document.getElementById("fitBtn");
-  const zoomInBtn = document.getElementById("zoomInBtn");
-  const zoomOutBtn = document.getElementById("zoomOutBtn");
-  const zoneTop = document.getElementById("zoneTop");
+  const pageLabel= document.getElementById("pageLabel");
+  const prevBtn  = document.getElementById("prevBtn");
+  const nextBtn  = document.getElementById("nextBtn");
+  const fitBtn   = document.getElementById("fitBtn");
+  const zoneTop  = document.getElementById("zoneTop");
   const zoneBottom = document.getElementById("zoneBottom");
 
   pdfjsLib.GlobalWorkerOptions.workerSrc =
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
-  let pdfDoc=null, pageFlip=null, total=0;
-  let base={w:800,h:1131}; // updated from first page
-  let zoom=1.0;
+  let pdfDoc=null, pageFlip=null, totalPages=0;
+  let base={ w:800, h:1131 };  // updated from first page
 
   function setStatus(s){ statusEl.textContent = s || ""; }
 
-  // We rotated the flip container 90°, so when computing fit we must
-  // treat FRAME HEIGHT as our effective WIDTH and FRAME WIDTH as our HEIGHT.
-  function isPortrait(){ return frame.clientWidth < 980; } // force single page on tablets/phones
+  function scaleToFit(){
+    // Book is rotated 90°, so its visual width≈page height and height≈page width.
+    const pad = 24;
+    const cw = Math.max(200, flipRoot.clientWidth  - pad);
+    const ch = Math.max(200, flipRoot.clientHeight - pad);
 
-  function setZoom(z){
-    zoom = Math.min(2.2, Math.max(0.5, z));
-    zoomLabel.textContent = Math.round(zoom*100) + "%";
-    if (!pageFlip) return;
-    if (isPortrait()){
-      // fit one page to the (rotated) width => use FRAME HEIGHT
-      const pad = 22;
-      const effW = Math.max(200, frame.clientHeight - pad);
-      const effH = Math.floor(effW * (base.h/base.w));
-      pageFlip.update({ width: effW, height: effH, usePortrait:true, showCover:false });
-    } else {
-      // scale spread by zoom; effective width is FRAME HEIGHT, height is FRAME WIDTH
-      const effW = Math.round(base.w * zoom);
-      const effH = Math.round(base.h * zoom);
-      pageFlip.update({ width: effW, height: effH, usePortrait:false, showCover:true });
-    }
-  }
-
-  function bestFit(){
-    if (!pageFlip) return;
-    if (isPortrait()){
-      const pad = 22;
-      const effW = Math.max(200, frame.clientHeight - pad); // rotated
-      const effH = Math.floor(effW * (base.h/base.w));
-      pageFlip.update({ width: effW, height: effH, usePortrait:true, showCover:false });
-      zoomLabel.textContent = "Fit";
-    } else {
-      const pad = 24;
-      // effective container for spread: width=frame.height, height=frame.width (because rotated)
-      const W = frame.clientHeight - pad; // place for two pages width-wise
-      const H = frame.clientWidth  - pad;
-      const z = Math.min(W / (base.w*2), H / base.h);
-      setZoom(z);
-    }
+    // After rotation: needed dimensions swap: needW=base.h, needH=base.w
+    const s = Math.min(cw / base.h, ch / base.w);
+    bookEl.style.setProperty("--s", s.toFixed(4));
   }
 
   function onFlip(e){
-    const idx = e.data;
-    const no = idx + 1;
-    if (isPortrait()){
-      pageLabel.textContent = `Page ${no} / ${total}`;
-    } else {
-      const right = Math.min(no + 1, total);
-      pageLabel.textContent = `Pages ${no}–${right} / ${total}`;
-    }
+    const idx = e.data; // 0-based
+    pageLabel.textContent = `Page ${idx+1} / ${totalPages}`;
   }
 
-  async function pageToImg(pdf, n){
+  async function renderPageToImage(pdf, n){
     const page = await pdf.getPage(n);
-    const device = Math.min(2, window.devicePixelRatio || 1);
-    const scale = (isPortrait()? 1.2 : 1.5) * device;
+    const device = Math.min(2, (window.devicePixelRatio||1));
+    const scale = 1.5 * device;         // crisp but mobile-safe
     const vp = page.getViewport({ scale });
     const c = document.createElement("canvas");
     c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
     await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
-    if (n === 1) base = { w: c.width, h: c.height };
+    if (n===1) base = { w: c.width, h: c.height };
     return c.toDataURL("image/png");
   }
 
@@ -192,33 +156,38 @@
       const ct = (res.headers.get("content-type")||"").toLowerCase();
       const buf = await res.arrayBuffer();
       const isPdf = ct.includes("application/pdf");
-      const looksHtml = new TextDecoder("utf-8").decode(new Uint8Array(buf.slice(0,1))) === "<";
-      if (!isPdf && looksHtml) throw new Error("Got HTML instead of a PDF. Use a direct PDF link.");
+      const htmlish = new TextDecoder().decode(new Uint8Array(buf.slice(0,1))) === "<";
+      if (!isPdf && htmlish) throw new Error("Got HTML instead of a PDF. Use a direct PDF URL.");
 
-      const loading = pdfjsLib.getDocument({ data: buf });
-      pdfDoc = await loading.promise;
-      total = pdfDoc.numPages;
+      const loadingTask = pdfjsLib.getDocument({ data: buf });
+      pdfDoc = await loadingTask.promise;
+      totalPages = pdfDoc.numPages;
 
       setStatus("Rendering pages…");
       const imgs = [];
-      for (let i=1;i<=total;i++){
-        imgs.push(await pageToImg(pdfDoc,i));
-        if (i % 4 === 0) setStatus(`Rendering pages… ${i}/${total}`);
+      for (let i=1; i<=totalPages; i++){
+        imgs.push(await renderPageToImage(pdfDoc, i));
+        if (i % 4 === 0) setStatus(`Rendering pages… ${i}/${totalPages}`);
       }
 
+      // Init PageFlip as single-page only (usePortrait true, no cover)
       bookEl.innerHTML = "";
       pageFlip = new St.PageFlip(bookEl, {
-        width: base.w, height: base.h,
+        width: base.w,
+        height: base.h,
         size: "fixed",
+        showCover: false,
+        usePortrait: true,
         maxShadowOpacity: 0.3,
-        mobileScrollSupport: true,
-        usePortrait: true, showCover: false
+        mobileScrollSupport: true
       });
       pageFlip.loadFromImages(imgs);
 
       pageFlip.on("flip", onFlip);
       onFlip({ data: pageFlip.getCurrentPageIndex() });
-      bestFit();
+
+      // Fit rotated book to container
+      scaleToFit();
       setStatus("");
 
       const goPrev = ()=> pageFlip && pageFlip.flipPrev();
@@ -226,11 +195,13 @@
       prevBtn.onclick = goPrev; nextBtn.onclick = goNext;
       zoneTop.onclick = goPrev; zoneBottom.onclick = goNext;
 
-      fitBtn.onclick = ()=> bestFit();
-      zoomInBtn.onclick = ()=> { if (!isPortrait()) setZoom(zoom + 0.1); else bestFit(); };
-      zoomOutBtn.onclick = ()=> { if (!isPortrait()) setZoom(zoom - 0.1); else bestFit(); };
+      // Prevent touch scroll stealing clicks inside some builders
+      [zoneTop, zoneBottom].forEach(z=>{
+        z.addEventListener("touchstart", e=> e.preventDefault(), {passive:false});
+        z.addEventListener("touchmove",  e=> e.preventDefault(), {passive:false});
+      });
 
-      history.replaceState(null,"",`?src=${encodeURIComponent(url)}`);
+      history.replaceState(null, "", `?src=${encodeURIComponent(url)}`);
     }catch(err){
       console.error(err);
       setStatus("Failed to load PDF.");
@@ -238,14 +209,9 @@
     }
   }
 
-  function handleResize(){
-    if (!pageFlip) return;
-    // Switch modes and re-fit using rotated geometry
-    pageFlip.update({ usePortrait: isPortrait(), showCover: !isPortrait() });
-    bestFit();
-  }
+  function handleResize(){ scaleToFit(); }
   window.addEventListener("resize", handleResize);
-  window.addEventListener("orientationchange", ()=> setTimeout(handleResize,120));
+  window.addEventListener("orientationchange", ()=> setTimeout(handleResize, 120));
 
   loadPDF(DEFAULT_SRC);
 })();
