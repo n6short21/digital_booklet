@@ -16,23 +16,31 @@
 
   .stage{position:relative;height:100%;padding:8px;display:flex;align-items:center;justify-content:center}
 
-  /* Outer container that fills the iframe */
+  /* Outer container that fills the iframe (no width cap) */
   #flipRoot{
-    position:relative;width:100%;height:100%;max-width:1100px;margin:auto;
-    border:1px solid #1f2937;border-radius:12px;background:#0b1220;
-    overflow:hidden;display:flex;align-items:center;justify-content:center
+    position:relative;
+    width:100%;
+    height:100%;
+    margin:auto;
+    border:1px solid #1f2937;
+    border-radius:12px;
+    background:#0b1220;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
   }
 
   /* Padded frame (so shadows never clip) */
   #frame{position:relative;width:100%;height:100%;padding:16px 16px 72px 16px}
 
-  /* Host for PageFlip (we size this area precisely) */
+  /* Host for PageFlip (we size this precisely) */
   #bookWrap{
     position:absolute;inset:16px 16px 72px 16px;
     display:flex;align-items:center;justify-content:center;
   }
 
-  #book{pointer-events:none}
+  #book{pointer-events:none}   /* click-only navigation; no dragging */
   #status{position:absolute;left:20px;top:14px;color:#9ca3af;font-size:13px}
 
   /* Click zones (left/right) */
@@ -41,7 +49,7 @@
   .left{cursor:w-resize}
   .right{cursor:e-resize}
 
-  /* Dock (we measure this live) */
+  /* Control dock (we measure its height for fit) */
   .dock{
     position:absolute;left:16px;right:16px;bottom:16px;z-index:4;
     display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
@@ -79,11 +87,13 @@
         <div id="bookWrap"><div id="book"></div></div>
         <div id="status">Loading…</div>
 
+        <!-- click-only navigation -->
         <div class="nav-overlay">
           <div class="zone left"  id="zoneLeft"></div>
           <div class="zone right" id="zoneRight"></div>
         </div>
 
+        <!-- controls -->
         <div class="dock" id="dock">
           <button class="btn" id="firstBtn" title="First page">⟸</button>
           <button class="btn" id="prevBtn"  title="Previous">←</button>
@@ -112,7 +122,9 @@
   const qs=new URLSearchParams(location.search);
   const SRC=qs.get("src")||"Sermon.pdf";
 
+  // Elements
   const flipRoot=document.getElementById('flipRoot');
+  const frameEl =document.getElementById('frame');
   const bookWrap=document.getElementById('bookWrap');
   const bookEl  =document.getElementById('book');
   const statusEl=document.getElementById('status');
@@ -131,11 +143,13 @@
   const zoneLeft=document.getElementById('zoneLeft');
   const zoneRight=document.getElementById('zoneRight');
 
+  // pdf.js
   pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
+  // State
   let pdfDoc=null, pageFlip=null, total=0;
-  let base={w:800,h:1131};
-  let zoomFactor=1.0;              // relative to fit scale
+  let base={w:800,h:1131};           // updated after first render
+  let zoomFactor=1.0;                // relative to Fit (1.0 = fit exactly)
   const DPR=Math.min(2,window.devicePixelRatio||1);
   const setStatus=s=>statusEl.textContent=s||"";
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -149,13 +163,18 @@
     pageLabel.textContent=`Page ${curr} / ${total}`;
   }
 
-  // --- Robust sizing: ALWAYS compute current visible size, not cached values
+  // Compute usable size from the actual outer container + live paddings + dock height
   function availableSize(){
-    // bookWrap rect inside flipRoot (already accounts for Sites column width)
-    const wrapRect = bookWrap.getBoundingClientRect();
+    const cs = window.getComputedStyle(frameEl);
+    const padT = parseInt(cs.paddingTop)    || 0;
+    const padR = parseInt(cs.paddingRight)  || 0;
+    const padB = parseInt(cs.paddingBottom) || 0;
+    const padL = parseInt(cs.paddingLeft)   || 0;
+
     const dockH = dock ? Math.ceil(dock.getBoundingClientRect().height) : 0;
-    const cw = Math.max(200, Math.floor(wrapRect.width));
-    const ch = Math.max(200, Math.floor(wrapRect.height - dockH));
+
+    const cw = Math.max(200, flipRoot.clientWidth  - padL - padR - 2);
+    const ch = Math.max(200, flipRoot.clientHeight - padT - padB - dockH - 2);
     return { cw, ch };
   }
 
@@ -178,8 +197,7 @@
 
   function setZoomFactor(f){
     zoomFactor = clamp(f, 0.5, 2.5);
-    // Defer to next frame so Sites’ layout changes settle before we measure
-    requestAnimationFrame(applyZoom);
+    requestAnimationFrame(applyZoom);   // defer until layout settles
   }
 
   async function renderPdfPageToImage(pdf, n){
@@ -248,19 +266,26 @@
       zoomInBtn.onclick  = () => setZoomFactor(zoomFactor + 0.1);
       zoomOutBtn.onclick = () => setZoomFactor(zoomFactor - 0.1);
 
-      // --------- Key fix for Google Sites ----------
-      // 1) React to any size change in our container or dock
+      // --- Triggers that work inside Google Sites ---
       const ro = new ResizeObserver(() => applyZoom());
+      ro.observe(flipRoot);
       ro.observe(bookWrap);
       ro.observe(dock);
-      // 2) Also watch the root (iframe) element — Sites changes width without window.resize
-      ro.observe(document.documentElement);
 
-      // 3) Orientation changes
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', () => requestAnimationFrame(applyZoom));
+      }
+
       window.addEventListener('orientationchange', () => setTimeout(applyZoom, 120));
 
-      // 4) After fonts settle (affects dock height)
       if (document.fonts && document.fonts.ready) document.fonts.ready.then(applyZoom);
+
+      // Light polling guard for odd Sites transitions
+      let lastW=0,lastH=0;
+      setInterval(() => {
+        const w=flipRoot.clientWidth, h=flipRoot.clientHeight;
+        if (w!==lastW || h!==lastH) { lastW=w; lastH=h; applyZoom(); }
+      }, 500);
 
     }catch(err){
       console.error(err); setStatus("Failed to load PDF."); alert(err.message);
