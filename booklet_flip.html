@@ -2,104 +2,180 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Flip Booklet</title>
+<title>Booklet Viewer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/css/page-flip.css" />
 <style>
-:root{--bg:#0f172a;--panel:#111827;--muted:#9ca3af;--text:#e5e7eb;--accent:#60a5fa}
-*{box-sizing:border-box}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;overflow:hidden}
-.app{height:100%;display:grid;grid-template-rows:auto 1fr auto}
-header,footer{background:var(--panel);padding:8px 12px;display:flex;justify-content:space-between;align-items:center}
-header{border-bottom:1px solid #1f2937}
-footer{border-top:1px solid #1f2937}
-.meta{color:var(--muted);font-size:13px}
-.stage{flex:1;position:relative;display:flex;align-items:center;justify-content:center}
-#flipRoot{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #1f2937;border-radius:12px;background:#0b1220}
-#book{pointer-events:none}
-.nav-overlay{position:absolute;inset:0;display:grid;grid-template-rows:1fr 1fr;z-index:3}
-.zone{width:100%;height:100%}
-.top{cursor:n-resize}
-.bottom{cursor:s-resize}
-.controls{display:flex;justify-content:center;gap:10px;padding:8px}
-.btn{background:#0b1220;border:1px solid #1f2937;color:var(--text);padding:8px 14px;border-radius:10px;font-weight:600;cursor:pointer}
-.btn:hover{border-color:var(--accent)}
-#status{position:absolute;left:10px;top:8px;font-size:13px;color:var(--muted)}
+  :root{--bg:#0f172a;--panel:#111827;--muted:#9ca3af;--text:#e5e7eb;--accent:#60a5fa}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
+  .app{height:100%;display:grid;grid-template-rows:auto 1fr auto}
+  .bar{background:var(--panel);padding:8px 12px;border-bottom:1px solid #1f2937;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .bar.bottom{border-top:1px solid #1f2937;border-bottom:0;justify-content:space-between}
+  .muted{color:var(--muted);font-size:13px}
+  .spacer{flex:1}
+  .btn{background:#0b1220;border:1px solid #1f2937;color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:600}
+  .btn:hover{border-color:var(--accent)}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .field{display:inline-flex;align-items:center;gap:6px}
+  input.page{width:64px;padding:6px 8px;border-radius:8px;border:1px solid #1f2937;background:#0b1220;color:var(--text);text-align:center}
+  .stage{position:relative;height:100%;display:flex;align-items:center;justify-content:center;padding:10px}
+  #canvasWrap{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;border:1px solid #1f2937;border-radius:12px;background:#0b1220;overflow:hidden}
+  canvas{max-width:100%;max-height:100%}
+  #status{position:absolute;left:12px;top:10px;font-size:13px;color:var(--muted)}
 </style>
 </head>
 <body>
 <div class="app">
-<header>
-  <div><strong>Flip Booklet</strong><span class="meta"> · click top/bottom to turn</span></div>
-  <div class="meta" id="pageLabel">—</div>
-</header>
+  <div class="bar">
+    <strong>Booklet</strong>
+    <span class="muted">· First/Prev/Next/Last + page jump (Staples-style)</span>
+    <span class="spacer"></span>
+    <button class="btn" id="firstBtn">⟸ First</button>
+    <button class="btn" id="prevBtn">← Prev</button>
+    <span class="field">
+      Page <input class="page" id="pageInput" value="1" inputmode="numeric" />
+      <span class="muted">of <span id="pageCount">—</span></span>
+    </span>
+    <button class="btn" id="nextBtn">Next →</button>
+    <button class="btn" id="lastBtn">Last ⟹</button>
+  </div>
 
-<div class="stage">
-  <div id="flipRoot">
-    <div id="book"></div>
-    <div id="status">Loading…</div>
-    <div class="nav-overlay">
-      <div class="zone top" id="zoneTop"></div>
-      <div class="zone bottom" id="zoneBottom"></div>
+  <div class="stage">
+    <div id="canvasWrap">
+      <div id="status">Loading…</div>
+      <canvas id="pageCanvas"></canvas>
+    </div>
+  </div>
+
+  <div class="bar bottom">
+    <span class="muted" id="meta">—</span>
+    <div>
+      <button class="btn" id="fitBtn">Fit</button>
+      <button class="btn" id="zoomOutBtn">–</button>
+      <button class="btn" id="zoomInBtn">+</button>
+      <span class="muted" id="zoomLabel">100%</span>
     </div>
   </div>
 </div>
 
-<div class="controls">
-  <button class="btn" id="prevBtn">▲ Prev</button>
-  <button class="btn" id="fitBtn">Fit</button>
-  <button class="btn" id="zoomOutBtn">–</button>
-  <button class="btn" id="zoomInBtn">+</button>
-  <button class="btn" id="nextBtn">Next ▼</button>
-</div>
-
-<footer>
-  <span class="meta">Single page · Auto-fit · Mobile friendly</span>
-  <span class="meta" id="zoomLabel">100%</span>
-</footer>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
-(async()=>{
-const qs=new URLSearchParams(location.search);
-const SRC=qs.get("src")||"your.pdf";
-pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-const book=document.getElementById("book"),root=document.getElementById("flipRoot"),status=document.getElementById("status"),
-lbl=document.getElementById("pageLabel"),zl=document.getElementById("zoomLabel");
-const prev=document.getElementById("prevBtn"),next=document.getElementById("nextBtn"),
-fit=document.getElementById("fitBtn"),zin=document.getElementById("zoomInBtn"),zout=document.getElementById("zoomOutBtn"),
-topZ=document.getElementById("zoneTop"),botZ=document.getElementById("zoneBottom");
-let pdfDoc,pageFlip,total,base={w:800,h:1131},zoom=1;
-const setStatus=s=>status.textContent=s||"";
-const onFlip=e=>lbl.textContent=`Page ${e.data+1} / ${total}`;
-const fitTo=()=>{
-  const pad=20,w=root.clientWidth-pad,h=root.clientHeight-pad;
-  const s=Math.min(w/base.w,h/base.h);
-  pageFlip.update({width:base.w*s*zoom,height:base.h*s*zoom,usePortrait:true,showCover:false,size:"fixed"});
-};
-const setZoom=z=>{zoom=Math.min(2.5,Math.max(0.5,z));zl.textContent=Math.round(zoom*100)+"%";fitTo();};
-const renderPage=async(p,i)=>{
-  const pg=await p.getPage(i),vp=pg.getViewport({scale:1.5*(window.devicePixelRatio||1)}),
-  c=document.createElement("canvas");c.width=vp.width;c.height=vp.height;
-  await pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
-  if(i===1)base={w:c.width,h:c.height};
-  return c.toDataURL("image/png");
-};
-try{
-  setStatus("Loading PDF…");
-  const buf=await(await fetch(SRC)).arrayBuffer();
-  pdfDoc=await pdfjsLib.getDocument({data:buf}).promise;
-  total=pdfDoc.numPages;setStatus("Rendering pages…");
-  const imgs=[];for(let i=1;i<=total;i++){imgs.push(await renderPage(pdfDoc,i));if(i%3===0)setStatus(`Rendering ${i}/${total}`);}
-  book.innerHTML="";pageFlip=new St.PageFlip(book,{width:base.w,height:base.h,usePortrait:true,showCover:false,size:"fixed"});
-  pageFlip.loadFromImages(imgs);pageFlip.on("flip",onFlip);onFlip({data:0});fitTo();setStatus("");
-  const goPrev=()=>pageFlip.flipPrev(),goNext=()=>pageFlip.flipNext();
-  prev.onclick=goPrev;next.onclick=goNext;topZ.onclick=goPrev;botZ.onclick=goNext;
-  fit.onclick=()=>{zoom=1;fitTo()};zin.onclick=()=>setZoom(zoom+0.1);zout.onclick=()=>setZoom(zoom-0.1);
-  window.addEventListener("resize",fitTo);window.addEventListener("orientationchange",()=>setTimeout(fitTo,120));
-}catch(e){console.error(e);setStatus("Failed to load PDF.");}
+(async ()=>{
+  const qs=new URLSearchParams(location.search);
+  const SRC=qs.get("src")||"your.pdf";
+
+  const firstBtn = document.getElementById('firstBtn');
+  const prevBtn  = document.getElementById('prevBtn');
+  const nextBtn  = document.getElementById('nextBtn');
+  const lastBtn  = document.getElementById('lastBtn');
+  const pageInput= document.getElementById('pageInput');
+  const pageCountEl=document.getElementById('pageCount');
+  const zoomLabel= document.getElementById('zoomLabel');
+  const fitBtn    = document.getElementById('fitBtn');
+  const zoomInBtn = document.getElementById('zoomInBtn');
+  const zoomOutBtn= document.getElementById('zoomOutBtn');
+  const metaEl    = document.getElementById('meta');
+
+  const statusEl  = document.getElementById('status');
+  const canvas    = document.getElementById('pageCanvas');
+  const ctx       = canvas.getContext('2d', { alpha:false });
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+  let pdf=null, total=0, page=1;
+  let baseViewportScale = 1.5;       // render scale for quality
+  let zoom = 1.0;                    // UI zoom (relative to fit)
+  let fitScale = 1.0;                // computed per resize
+  const DPR = Math.min(2, window.devicePixelRatio||1);
+
+  const setStatus = s => statusEl.textContent = s||"";
+  const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
+  const updateButtons = ()=>{
+    firstBtn.disabled = page<=1;
+    prevBtn.disabled  = page<=1;
+    nextBtn.disabled  = page>=total;
+    lastBtn.disabled  = page>=total;
+    pageInput.value   = page;
+  };
+
+  async function load(){
+    setStatus("Loading PDF…");
+    const res = await fetch(SRC);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const buf = await res.arrayBuffer();
+    pdf = await pdfjsLib.getDocument({data:buf}).promise;
+    total = pdf.numPages;
+    pageCountEl.textContent = total;
+    metaEl.textContent = `${await titleOrName(pdf)} • ${total} pages`;
+    page = clamp(parseInt(qs.get("p")||"1",10)||1,1,total);
+    await render();
+    setStatus("");
+  }
+
+  async function titleOrName(pdf){
+    try{
+      const md = await pdf.getMetadata();
+      return (md && (md.info?.Title || md.metadata?.get('dc:title'))) || SRC.split('/').pop();
+    }catch{ return SRC.split('/').pop(); }
+  }
+
+  async function render(){
+    const pdfPage = await pdf.getPage(page);
+    // Base viewport for pixel quality
+    const baseVp = pdfPage.getViewport({ scale: baseViewportScale * DPR });
+    // Compute fit scale to contain within canvasWrap
+    const wrap = document.getElementById('canvasWrap');
+    const maxW = wrap.clientWidth - 20;
+    const maxH = wrap.clientHeight - 20;
+    fitScale = Math.min(maxW / baseVp.width, maxH / baseVp.height, 1);
+    const vp = pdfPage.getViewport({ scale: baseViewportScale * DPR * fitScale * zoom });
+
+    // Size canvas to device pixels; CSS will auto-fit
+    canvas.width  = Math.round(vp.width);
+    canvas.height = Math.round(vp.height);
+    canvas.style.width  = Math.round(vp.width / DPR) + "px";
+    canvas.style.height = Math.round(vp.height/ DPR) + "px";
+
+    await pdfPage.render({ canvasContext: ctx, viewport: vp }).promise;
+    zoomLabel.textContent = Math.round(zoom*100)+"%";
+    updateButtons();
+    history.replaceState(null,"",`?src=${encodeURIComponent(SRC)}&p=${page}`);
+  }
+
+  // Pager actions (Staples-style)
+  firstBtn.onclick = async ()=>{ if(page>1){ page=1; await render(); } };
+  prevBtn.onclick  = async ()=>{ if(page>1){ page--; await render(); } };
+  nextBtn.onclick  = async ()=>{ if(page<total){ page++; await render(); } };
+  lastBtn.onclick  = async ()=>{ if(page<total){ page=total; await render(); } };
+  pageInput.addEventListener('keyup', async (e)=>{
+    if(e.key==='Enter'){ const n = clamp(parseInt(pageInput.value||"1",10)||1,1,total); if(n!==page){ page=n; await render(); } }
+  });
+  pageInput.addEventListener('blur', async ()=>{
+    const n = clamp(parseInt(pageInput.value||"1",10)||1,1,total);
+    if(n!==page){ page=n; await render(); } else { pageInput.value = page; }
+  });
+
+  // Zoom
+  const setZoom = async (z)=>{ zoom = clamp(z, 0.5, 2.5); await render(); };
+  zoomInBtn.onclick  = ()=> setZoom(zoom+0.1);
+  zoomOutBtn.onclick = ()=> setZoom(zoom-0.1);
+  fitBtn.onclick     = ()=> setZoom(1.0);
+
+  // Keyboard (←/→, Home/End)
+  window.addEventListener('keydown', async (e)=>{
+    if(e.target === pageInput) return;
+    if(e.key === 'ArrowLeft')  return prevBtn.click();
+    if(e.key === 'ArrowRight') return nextBtn.click();
+    if(e.key === 'Home')       return firstBtn.click();
+    if(e.key === 'End')        return lastBtn.click();
+  });
+
+  // Re-render on resize / orientation
+  const onResize = ()=> render();
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', ()=> setTimeout(onResize,120));
+
+  try { await load(); } catch(err){ console.error(err); setStatus('Failed to load PDF.'); }
 })();
 </script>
 </body>
