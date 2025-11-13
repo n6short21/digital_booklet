@@ -238,18 +238,17 @@
       // Click zones
       zoneLeft.onclick =()=>pageFlip.flipPrev();
       zoneRight.onclick=()=>pageFlip.flipNext();
-
       // Zoom
-      fitBtn.onclick    =()=>bestFitZoom();
-      zoomInBtn.onclick =()=>setZoom(zoom+0.1);
+      fitBtn.onclick     = () => bestFitZoom();
+      zoomInBtn.onclick  = () => setZoom(zoom + 0.1);
       zoomOutBtn.onclick = () => setZoom(zoom - 0.1);
-
-
+      
       // Refit on resize/orientation/font settle
-      const refit=()=>bestFitZoom();
-      window.addEventListener('resize',refit);
-      window.addEventListener('orientationchange',()=>setTimeout(refit,120));
-      if(document.fonts && document.fonts.ready) document.fonts.ready.then(refit);
+      const refit = () => bestFitZoom();
+      window.addEventListener('resize', refit);
+      window.addEventListener('orientationchange', () => setTimeout(refit, 120));
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(refit);
+
 
     }catch(err){
       console.error(err); setStatus("Failed to load PDF."); alert(err.message);
