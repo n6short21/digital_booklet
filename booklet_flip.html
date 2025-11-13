@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/css/page-flip.css" />
 <style>
-  :root{--bg:#0f172a;--panel:#111827;--muted:#9ca3af;--text:#e5e7eb;--accent:#60a5fa}
+  :root{--bg:#0f172a;--panel:#111827;--muted:#9ca3af;--text:#e5e7eb;--accent:#60a5fa;--zoom:1}
   *{box-sizing:border-box}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;overflow:hidden}
 
@@ -18,33 +18,30 @@
 
   /* Outer container that fills the iframe (no width cap) */
   #flipRoot{
-    position:relative;
-    width:100%;
-    height:100%;
-    margin:auto;
-    border:1px solid #1f2937;
-    border-radius:12px;
-    background:#0b1220;
-    overflow:hidden;
-    display:flex;
-    align-items:center;
-    justify-content:center;
+    position:relative;width:100%;height:100%;margin:auto;
+    border:1px solid #1f2937;border-radius:12px;background:#0b1220;
+    overflow:hidden;display:flex;align-items:center;justify-content:center;
   }
 
-  /* Padded frame (so shadows never clip) */
+  /* Padded frame so shadows never clip */
   #frame{position:relative;width:100%;height:100%;padding:16px 16px 72px 16px}
 
-  /* Host for PageFlip (we size this precisely) */
+  /* PageFlip host area – we keep this at FIT size; images scale inside */
   #bookWrap{
     position:absolute;inset:16px 16px 72px 16px;
     display:flex;align-items:center;justify-content:center;
+    overflow:hidden; /* crop when zoomed in */
   }
 
-  /* replace your existing #book rule */
-  #book{
-    pointer-events:none;          /* still click-only nav */
-    transform-origin: top center; /* scale from the top/center */
-    will-change: transform;       /* smoother scaling */
+  /* Click-only navigation; PageFlip stays at base/FIT, images scale */
+  #book{pointer-events:none}
+  #book img{
+    display:block;
+    width:100%;
+    height:100%;
+    transform-origin: top center;
+    transform: scale(var(--zoom));
+    will-change: transform;
   }
 
   #status{position:absolute;left:20px;top:14px;color:#9ca3af;font-size:13px}
@@ -176,7 +173,6 @@
     const padR = parseInt(cs.paddingRight)  || 0;
     const padB = parseInt(cs.paddingBottom) || 0;
     const padL = parseInt(cs.paddingLeft)   || 0;
-
     const dockH = dock ? Math.ceil(dock.getBoundingClientRect().height) : 0;
 
     const cw = Math.max(200, flipRoot.clientWidth  - padL - padR - 2);
@@ -189,32 +185,31 @@
     return Math.min(cw/base.w, ch/base.h);
   }
 
+  // Apply zoom by scaling the page IMAGES; keep PageFlip at FIT size
   function applyZoom(){
-    if (!pageFlip) return;
-  
-    // Fit scale from the *live* container size
+    if(!pageFlip) return;
     const fit = getFitScale();
-    const scale = fit * zoomFactor;      // 1.0 == exact fit
-  
-    // Keep PageFlip at its base (unscaled) size so animation stays crisp
+    const scaledW = Math.round(base.w * fit);
+    const scaledH = Math.round(base.h * fit);
+
+    // Keep book at FIT size so Sites reflow isn't needed
     pageFlip.update({
-      width:  base.w,
-      height: base.h,
-      usePortrait: true,
-      showCover: false,
-      size: "fixed"
+      width:  scaledW,
+      height: scaledH,
+      usePortrait:true, showCover:false, size:"fixed"
     });
-  
-    // Visually scale the book; reserve the scaled box so nothing crops
-    bookEl.style.transform = `scale(${scale})`;
-    bookWrap.style.width   = Math.round(base.w * scale) + "px";
-    bookWrap.style.height  = Math.round(base.h * scale) + "px";
-  
-    // Label reflects factor relative to Fit
+
+    // Zoom is a multiplier applied only to images
+    document.documentElement.style.setProperty('--zoom', String(zoomFactor));
+
+    // Reserve the FIT box so nothing crops due to container constraints
+    bookWrap.style.width  = scaledW + "px";
+    bookWrap.style.height = scaledH + "px";
+
+    // Label
     zoomLabel.textContent =
       Math.abs(zoomFactor - 1) < 0.01 ? "Fit" : Math.round(zoomFactor * 100) + "%";
   }
-
 
   function setZoomFactor(f){
     zoomFactor = clamp(f, 0.5, 2.5);
@@ -282,7 +277,7 @@
       zoneLeft.onclick =()=>pageFlip.flipPrev();
       zoneRight.onclick=()=>pageFlip.flipNext();
 
-      // Zoom buttons
+      // Zoom controls (relative to FIT)
       fitBtn.onclick     = () => setZoomFactor(1.0);
       zoomInBtn.onclick  = () => setZoomFactor(zoomFactor + 0.1);
       zoomOutBtn.onclick = () => setZoomFactor(zoomFactor - 0.1);
