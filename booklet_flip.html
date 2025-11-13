@@ -10,25 +10,35 @@
   *{box-sizing:border-box}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;overflow:hidden}
 
+  /* Layout */
   .app{height:100%;display:grid;grid-template-rows:auto 1fr}
   header{background:var(--panel);border-bottom:1px solid #1f2937;padding:8px 12px;display:flex;justify-content:space-between;align-items:center}
   .muted{color:var(--muted);font-size:13px}
 
   .stage{position:relative;height:100%;padding:8px;display:flex;align-items:center;justify-content:center}
-  #flipRoot{position:relative;width:100%;height:100%;max-width:1100px;margin:auto;border:1px solid #1f2937;border-radius:12px;background:#0b1220;overflow:hidden;display:flex;align-items:center;justify-content:center}
-  #book{pointer-events:none} /* no dragging; clicks only */
+  #flipRoot{
+    position:relative;width:100%;height:100%;max-width:1100px;margin:auto;
+    border:1px solid #1f2937;border-radius:12px;background:#0b1220;
+    overflow:hidden;display:flex;align-items:center;justify-content:center
+  }
+  #book{pointer-events:none} /* no drag/swipe; we click to flip */
   #status{position:absolute;left:12px;top:10px;color:#9ca3af;font-size:13px}
 
-  /* Click overlay to turn pages (left/right click zones) */
+  /* Click zones for navigation (left/right) */
   .nav-overlay{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;z-index:3}
   .zone{height:100%}
   .left{cursor:w-resize}
   .right{cursor:e-resize}
 
-  /* Controls dock: sits right under the page; on phones it tucks closer */
-  .dock{position:absolute;left:8px;right:8px;bottom:8px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
-        background:rgba(17,24,39,.8);backdrop-filter:blur(6px);border:1px solid #1f2937;border-radius:10px;padding:6px 8px;z-index:4}
-  .btn{background:#0b1220;border:1px solid #1f2937;color:var(--text);padding:6px 10px;border-radius:8px;font-weight:600;cursor:pointer}
+  /* Control dock sits INSIDE the flipRoot; measured for true fit */
+  .dock{
+    position:absolute;left:8px;right:8px;bottom:8px;z-index:4;
+    display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
+    background:rgba(17,24,39,.82);backdrop-filter:blur(6px);
+    border:1px solid #1f2937;border-radius:10px;padding:6px 8px
+  }
+  .btn{background:#0b1220;border:1px solid #1f2937;color:var(--text);
+       padding:6px 10px;border-radius:8px;font-weight:600;cursor:pointer}
   .btn:hover{border-color:var(--accent)}
   .btn[disabled]{opacity:.55;cursor:not-allowed}
   .field{display:inline-flex;align-items:center;gap:6px}
@@ -36,7 +46,6 @@
   .sep{width:1px;height:22px;background:#1f2937;margin:0 4px;border-radius:1px}
   .meta{color:#cbd5e1;font-size:12px}
 
-  /* Phone tweaks: keep dock tight to the page; reduce padding */
   @media (max-width:640px){
     .stage{padding:6px}
     .dock{left:6px;right:6px;bottom:6px;padding:6px}
@@ -64,19 +73,19 @@
 
       <!-- controls dock (Staples-style pager + zoom) -->
       <div class="dock" id="dock">
-        <button class="btn" id="firstBtn">⟸</button>
-        <button class="btn" id="prevBtn">←</button>
+        <button class="btn" id="firstBtn" title="First page">⟸</button>
+        <button class="btn" id="prevBtn"  title="Previous">←</button>
         <span class="field">
           <span class="meta">Page</span>
           <input class="page" id="pageInput" value="1" inputmode="numeric" />
           <span class="meta">of <span id="pageCount">—</span></span>
         </span>
-        <button class="btn" id="nextBtn">→</button>
-        <button class="btn" id="lastBtn">⟹</button>
+        <button class="btn" id="nextBtn"  title="Next">→</button>
+        <button class="btn" id="lastBtn"  title="Last page">⟹</button>
         <span class="sep"></span>
-        <button class="btn" id="fitBtn">Fit</button>
-        <button class="btn" id="zoomOutBtn">–</button>
-        <button class="btn" id="zoomInBtn">+</button>
+        <button class="btn" id="fitBtn"     title="Fit to view">Fit</button>
+        <button class="btn" id="zoomOutBtn" title="Zoom out">–</button>
+        <button class="btn" id="zoomInBtn"  title="Zoom in">+</button>
         <span class="meta" id="zoomLabel">100%</span>
       </div>
     </div>
@@ -89,7 +98,7 @@
 <script>
 (async ()=>{
   const qs=new URLSearchParams(location.search);
-  const SRC=qs.get("src")||"your.pdf";
+  const SRC=qs.get("src")||"your.pdf";       // keep your ?src=Sermon.pdf
 
   // UI elements
   const flipRoot = document.getElementById('flipRoot');
@@ -109,16 +118,17 @@
   const zoomOutBtn=document.getElementById('zoomOutBtn');
   const zoneLeft = document.getElementById('zoneLeft');
   const zoneRight= document.getElementById('zoneRight');
+  const dock     = document.getElementById('dock');
 
-  // pdf.js setup
+  // pdf.js
   pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
-  // state
+  // State
   let pdfDoc=null, pageFlip=null, total=0;
-  let base={w:800,h:1131};  // updated from first render
-  let zoom=1.0;
-
+  let base={w:800,h:1131};  // updated after first render
+  let zoom=1.0;             // absolute scale applied to base
   const DPR = Math.min(2, window.devicePixelRatio || 1);
+
   const setStatus = s => statusEl.textContent = s || "";
   const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
 
@@ -130,55 +140,37 @@
     lastBtn.disabled  = curr>=total;
     pageLabel.textContent = `Page ${curr} / ${total}`;
   }
-  
-  function availableSize() {
+
+  // Measure *real* available size (subtract the actual dock & status heights)
+  function availableSize(){
     const pad = 24;
     const cw = Math.max(200, flipRoot.clientWidth  - pad);
     const ch = Math.max(200, flipRoot.clientHeight - pad);
-  
-    // Subtract the real dock height (could be 1 or 2 rows on mobile)
-    const dock = document.getElementById('dock');
-    const dockH = dock ? dock.getBoundingClientRect().height : 0;
-  
-    // Also subtract the tiny status line if you still show it
-    const status = document.getElementById('status');
-    const statusH = status ? status.getBoundingClientRect().height : 0;
-  
+    const dockH   = dock   ? dock.getBoundingClientRect().height   : 0;
+    const statusH = statusEl ? statusEl.getBoundingClientRect().height : 0;
     return { cw, ch: ch - dockH - statusH - 8 };
   }
-  
-  // zoom is now *relative* to the true fit scale, so we never overshoot
-  function bestFitZoom() {
+
+  // Fit the page to the measured space and apply zoom relative to that fit
+  function setZoom(z){
     const { cw, ch } = availableSize();
     const fit = Math.min(cw / base.w, ch / base.h);
-    setZoom(fit);              // setZoom expects an absolute scale
-    // show “Fit” instead of 100% when exactly at fit
-    const pct = Math.round((fit / fit) * 100);
-    zoomLabel.textContent = (Math.abs(zoom - fit) < 0.01) ? "Fit" : `${pct}%`;
-  }
-  
-  // Keep zoom clamped but always apply *after* measuring real available size
-  function setZoom(z) {
-    // Never smaller than 0.5× fit and never larger than 2.5× fit
-    const { cw, ch } = availableSize();
-    const fit = Math.min(cw / base.w, ch / base.h);
-    const minZ = 0.5 * fit, maxZ = 2.5 * fit;
-  
+    const minZ = 0.5 * fit, maxZ = 2.5 * fit;          // clamp around true fit
     zoom = Math.max(minZ, Math.min(maxZ, z));
-    if (!pageFlip) return;
-  
-    pageFlip.update({
-      width:  Math.round(base.w * zoom),
-      height: Math.round(base.h * zoom),
-      usePortrait: true,
-      showCover: false,
-      size: "fixed"
-    });
-  
-    // Label
+
+    if (pageFlip){
+      pageFlip.update({
+        width:  Math.round(base.w * zoom),
+        height: Math.round(base.h * zoom),
+        usePortrait: true,
+        showCover: false,
+        size: "fixed"
+      });
+    }
     const pct = Math.round((zoom / fit) * 100);
     zoomLabel.textContent = (Math.abs(zoom - fit) < 0.01) ? "Fit" : `${pct}%`;
   }
+  function bestFitZoom(){ setZoom(Number.POSITIVE_INFINITY); } // will clamp to fit
 
   async function renderPdfPageToImage(pdf, n){
     const page = await pdf.getPage(n);
@@ -206,34 +198,25 @@
         if (i%4===0) setStatus(`Rendering… ${i}/${total}`);
       }
 
-      // init PageFlip (animation is back)
+      // init PageFlip with single-page animation
       bookEl.innerHTML = "";
       pageFlip = new St.PageFlip(bookEl, {
         width: base.w, height: base.h,
-        usePortrait: true, showCover: false,
-        size: "fixed",
-        maxShadowOpacity: 0.3,
-        mobileScrollSupport: true
+        usePortrait: true, showCover: false, size: "fixed",
+        maxShadowOpacity: 0.3, mobileScrollSupport: true
       });
       pageFlip.loadFromImages(imgs);
       pageFlip.on("flip", e => updatePager(e.data + 1));
       updatePager(1);
-      const refit = () => bestFitZoom();
-      window.addEventListener("resize", refit);
-      window.addEventListener("orientationchange", () => setTimeout(refit, 120));
-      
-      // Optional: refit if fonts load and change dock height
-      if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(refit);
-      }
+
+      bestFitZoom();        // precise fit (no cropping/scrollbars)
       setStatus("");
 
-      // pager actions (Staples-like)
+      // Pager actions
       firstBtn.onclick = ()=> pageFlip.flip(0);
       prevBtn.onclick  = ()=> pageFlip.flipPrev();
       nextBtn.onclick  = ()=> pageFlip.flipNext();
       lastBtn.onclick  = ()=> pageFlip.flip(total-1);
-
       pageInput.addEventListener('keyup', e=>{
         if (e.key==='Enter'){
           const n = clamp(parseInt(pageInput.value||"1",10)||1,1,total);
@@ -245,16 +228,16 @@
         pageFlip.flip(n-1);
       });
 
-      // click zones
+      // Click zones
       zoneLeft.onclick  = ()=> pageFlip.flipPrev();
       zoneRight.onclick = ()=> pageFlip.flipNext();
 
-      // zoom
+      // Zoom
       fitBtn.onclick     = ()=> bestFitZoom();
       zoomInBtn.onclick  = ()=> setZoom(zoom + 0.1);
       zoomOutBtn.onclick = ()=> setZoom(zoom - 0.1);
 
-      // keyboard (if iframe allows focus)
+      // Keyboard (if iframe allows focus)
       window.addEventListener('keydown', e=>{
         if (document.activeElement === pageInput) return;
         if (e.key==='ArrowLeft')  prevBtn.click();
@@ -265,10 +248,11 @@
         if (e.key==='-' || e.key==='_') zoomOutBtn.click();
       });
 
-      // refit on resize / orientation
+      // Refit on resize/orientation and after fonts settle (affects dock height)
       const refit = ()=> bestFitZoom();
       window.addEventListener('resize', refit);
       window.addEventListener('orientationchange', ()=> setTimeout(refit,120));
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(refit);
 
     }catch(err){
       console.error(err);
