@@ -15,24 +15,23 @@
   .muted{color:var(--muted);font-size:13px}
 
   .stage{position:relative;height:100%;padding:8px;display:flex;align-items:center;justify-content:center}
+
   /* Outer container */
   #flipRoot{
     position:relative;width:100%;height:100%;max-width:1100px;margin:auto;
     border:1px solid #1f2937;border-radius:12px;background:#0b1220;
     overflow:hidden;display:flex;align-items:center;justify-content:center
   }
+
   /* Inner frame adds safe padding so shadows/margins never clip */
-  #frame{
-    position:relative; width:100%; height:100%;
-    padding:16px 16px 72px 16px;             /* top/right/bottom/left safe area */
-  }
+  #frame{position:relative;width:100%;height:100%;padding:16px 16px 72px 16px}
+
   /* PageFlip host sits inside the padded frame */
   #bookWrap{
-    position:absolute; inset:16px 16px 72px 16px;  /* keep in sync with #frame padding */
-    display:flex; align-items:center; justify-content:center;
+    position:absolute;inset:16px 16px 72px 16px;display:flex;align-items:center;justify-content:center;
   }
 
-  #book{pointer-events:none} /* no drag/swipe; clicks only */
+  #book{pointer-events:none}
   #status{position:absolute;left:20px;top:14px;color:#9ca3af;font-size:13px}
 
   /* Click zones (left/right) */
@@ -43,7 +42,7 @@
 
   /* Dock lives inside frame bottom; we measure it for fit */
   .dock{
-    position:absolute; left:16px; right:16px; bottom:16px; z-index:4;
+    position:absolute;left:16px;right:16px;bottom:16px;z-index:4;
     display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
     background:rgba(17,24,39,.82);backdrop-filter:blur(6px);
     border:1px solid #1f2937;border-radius:10px;padding:6px 8px
@@ -114,16 +113,15 @@
   const qs=new URLSearchParams(location.search);
   const SRC=qs.get("src")||"Sermon.pdf";
 
-  const flipRoot=document.getElementById('flipRoot');
-  const frame   =document.getElementById('frame');
+  // Elements
   const bookWrap=document.getElementById('bookWrap');
   const bookEl  =document.getElementById('book');
   const statusEl=document.getElementById('status');
+  const dock    =document.getElementById('dock');
   const pageLabel=document.getElementById('pageLabel');
   const pageInput=document.getElementById('pageInput');
   const pageCount=document.getElementById('pageCount');
   const zoomLabel=document.getElementById('zoomLabel');
-
   const firstBtn=document.getElementById('firstBtn');
   const prevBtn =document.getElementById('prevBtn');
   const nextBtn =document.getElementById('nextBtn');
@@ -133,13 +131,14 @@
   const zoomOutBtn=document.getElementById('zoomOutBtn');
   const zoneLeft=document.getElementById('zoneLeft');
   const zoneRight=document.getElementById('zoneRight');
-  const dock    =document.getElementById('dock');
 
+  // pdf.js worker
   pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
-  let pdfDoc=null,pageFlip=null,total=0;
-  let base={w:800,h:1131};
-  let zoom=1.0;
+  // State
+  let pdfDoc=null, pageFlip=null, total=0;
+  let base={w:800,h:1131};         // updated from first page render
+  let zoomFactor=1.0;              // 1.0 == Fit; we scale relative to Fit
   const DPR=Math.min(2,window.devicePixelRatio||1);
   const setStatus=s=>statusEl.textContent=s||"";
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -153,38 +152,40 @@
     pageLabel.textContent=`Page ${curr} / ${total}`;
   }
 
-  // Measure the *usable* area (inner frame minus dock height)
+  // Measure usable area inside the frame (minus the live dock height)
   function availableSize(){
     const r=bookWrap.getBoundingClientRect();
     const dockH = dock ? Math.ceil(dock.getBoundingClientRect().height) : 0;
-    const topPad   = parseInt(window.getComputedStyle(frame).paddingTop)    || 0;
-    const rightPad = parseInt(window.getComputedStyle(frame).paddingRight)  || 0;
-    const botPad   = parseInt(window.getComputedStyle(frame).paddingBottom) || 0;
-    const leftPad  = parseInt(window.getComputedStyle(frame).paddingLeft)   || 0;
-
-    // we already inset bookWrap by these paddings, but we compute based on its rect
     const cw = Math.max(200, Math.floor(r.width));
     const ch = Math.max(200, Math.floor(r.height - dockH));
     return { cw, ch };
   }
 
-  function setZoom(z){
+  // Fit scale for ONE page to fully contain in available space
+  function getFitScale(){
     const {cw,ch}=availableSize();
-    const fit=Math.min(cw/base.w, ch/base.h);
-    const minZ=0.5*fit, maxZ=2.5*fit;
-    zoom=Math.max(minZ, Math.min(maxZ, z));
-
-    if(pageFlip){
-      pageFlip.update({
-        width:  Math.round(base.w*zoom),
-        height: Math.round(base.h*zoom),
-        usePortrait:true, showCover:false, size:"fixed"
-      });
-    }
-    const pct=Math.round((zoom/fit)*100);
-    zoomLabel.textContent=(Math.abs(zoom-fit)<0.01)?"Fit":`${pct}%`;
+    return Math.min(cw/base.w, ch/base.h);
   }
-  function bestFitZoom(){ setZoom(Number.POSITIVE_INFINITY); }
+
+  // Apply zoom using zoomFactor * fitScale
+  function applyZoom(){
+    if(!pageFlip) return;
+    const fit = getFitScale();
+    const scale = fit * zoomFactor;
+    pageFlip.update({
+      width:  Math.round(base.w * scale),
+      height: Math.round(base.h * scale),
+      usePortrait:true, showCover:false, size:"fixed"
+    });
+    // Update label (relative to Fit)
+    zoomLabel.textContent = Math.abs(zoomFactor-1) < 0.01 ? "Fit" : Math.round(zoomFactor*100) + "%";
+  }
+
+  // Set zoom factor and apply (clamped to 0.5x .. 2.5x of Fit)
+  function setZoomFactor(f){
+    zoomFactor = clamp(f, 0.5, 2.5);
+    applyZoom();
+  }
 
   async function renderPdfPageToImage(pdf, n){
     const page=await pdf.getPage(n);
@@ -222,7 +223,9 @@
       pageFlip.on("flip", e=>updatePager(e.data+1));
       updatePager(1);
 
-      bestFitZoom();
+      // Initial fit (and whenever container changes)
+      zoomFactor = 1.0;   // start at Fit
+      applyZoom();
       setStatus("");
 
       // Pager
@@ -231,24 +234,30 @@
       nextBtn.onclick =()=>pageFlip.flipNext();
       lastBtn.onclick =()=>pageFlip.flip(total-1);
       pageInput.addEventListener('keyup',e=>{
-        if(e.key==='Enter'){ const n=clamp(parseInt(pageInput.value||"1",10)||1,1,total); pageFlip.flip(n-1); }
+        if(e.key==='Enter'){
+          const n = clamp(parseInt(pageInput.value||"1",10)||1,1,total);
+          pageFlip.flip(n-1);
+        }
       });
-      pageInput.addEventListener('blur',()=>{ const n=clamp(parseInt(pageInput.value||"1",10)||1,1,total); pageFlip.flip(n-1); });
+      pageInput.addEventListener('blur',()=>{
+        const n = clamp(parseInt(pageInput.value||"1",10)||1,1,total);
+        pageFlip.flip(n-1);
+      });
 
       // Click zones
       zoneLeft.onclick =()=>pageFlip.flipPrev();
       zoneRight.onclick=()=>pageFlip.flipNext();
-      // Zoom
-      fitBtn.onclick     = () => bestFitZoom();
-      zoomInBtn.onclick  = () => setZoom(zoom + 0.1);
-      zoomOutBtn.onclick = () => setZoom(zoom - 0.1);
-      
-      // Refit on resize/orientation/font settle
-      const refit = () => bestFitZoom();
-      window.addEventListener('resize', refit);
-      window.addEventListener('orientationchange', () => setTimeout(refit, 120));
-      if (document.fonts && document.fonts.ready) document.fonts.ready.then(refit);
 
+      // Zoom (relative to Fit)
+      fitBtn.onclick     = () => setZoomFactor(1.0);
+      zoomInBtn.onclick  = () => setZoomFactor(zoomFactor + 0.1);
+      zoomOutBtn.onclick = () => setZoomFactor(zoomFactor - 0.1);
+
+      // Auto-fit on resize/orientation (and keep your zoomFactor)
+      const refit = ()=> applyZoom();
+      window.addEventListener('resize', refit);
+      window.addEventListener('orientationchange', ()=> setTimeout(refit,120));
+      if(document.fonts && document.fonts.ready) document.fonts.ready.then(refit);
 
     }catch(err){
       console.error(err); setStatus("Failed to load PDF."); alert(err.message);
