@@ -40,7 +40,13 @@
     display:flex;align-items:center;justify-content:center;
   }
 
-  #book{pointer-events:none}   /* click-only navigation; no dragging */
+  /* replace your existing #book rule */
+  #book{
+    pointer-events:none;          /* still click-only nav */
+    transform-origin: top center; /* scale from the top/center */
+    will-change: transform;       /* smoother scaling */
+  }
+
   #status{position:absolute;left:20px;top:14px;color:#9ca3af;font-size:13px}
 
   /* Click zones (left/right) */
@@ -184,16 +190,31 @@
   }
 
   function applyZoom(){
-    if(!pageFlip) return;
+    if (!pageFlip) return;
+  
+    // Fit scale from the *live* container size
     const fit = getFitScale();
-    const scale = fit * zoomFactor;
+    const scale = fit * zoomFactor;      // 1.0 == exact fit
+  
+    // Keep PageFlip at its base (unscaled) size so animation stays crisp
     pageFlip.update({
-      width:  Math.round(base.w * scale),
-      height: Math.round(base.h * scale),
-      usePortrait:true, showCover:false, size:"fixed"
+      width:  base.w,
+      height: base.h,
+      usePortrait: true,
+      showCover: false,
+      size: "fixed"
     });
-    zoomLabel.textContent = Math.abs(zoomFactor-1) < 0.01 ? "Fit" : Math.round(zoomFactor*100) + "%";
+  
+    // Visually scale the book; reserve the scaled box so nothing crops
+    bookEl.style.transform = `scale(${scale})`;
+    bookWrap.style.width   = Math.round(base.w * scale) + "px";
+    bookWrap.style.height  = Math.round(base.h * scale) + "px";
+  
+    // Label reflects factor relative to Fit
+    zoomLabel.textContent =
+      Math.abs(zoomFactor - 1) < 0.01 ? "Fit" : Math.round(zoomFactor * 100) + "%";
   }
+
 
   function setZoomFactor(f){
     zoomFactor = clamp(f, 0.5, 2.5);
