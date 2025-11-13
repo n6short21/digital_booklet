@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/css/page-flip.css" />
 <style>
-  :root{--bg:#0f172a;--panel:#111827;--muted:#9ca3af;--text:#e5e7eb;--accent:#60a5fa;--zoom:1}
+  :root{--bg:#0f172a;--panel:#111827;--muted:#9ca3af;--text:#e5e7eb;--accent:#60a5fa}
   *{box-sizing:border-box}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;overflow:hidden}
 
@@ -16,43 +16,41 @@
 
   .stage{position:relative;height:100%;padding:8px;display:flex;align-items:center;justify-content:center}
 
-  /* Outer container that fills the iframe (no width cap) */
+  /* Outer container that fills the iframe */
   #flipRoot{
     position:relative;width:100%;height:100%;margin:auto;
     border:1px solid #1f2937;border-radius:12px;background:#0b1220;
     overflow:hidden;display:flex;align-items:center;justify-content:center;
   }
 
-  /* Padded frame so shadows never clip */
-  #frame{position:relative;width:100%;height:100%;padding:16px 16px 72px 16px}
+  /* Padded frame (so shadows never clip) */
+  #frame{position:relative;width:100%;height:100%;padding:16px 16px 76px 16px}
 
-  /* PageFlip host area – we keep this at FIT size; images scale inside */
+  /* Host area for the scaled book */
   #bookWrap{
-    position:absolute;inset:16px 16px 72px 16px;
+    position:absolute;inset:16px 16px 76px 16px;
     display:flex;align-items:center;justify-content:center;
-    overflow:hidden; /* crop when zoomed in */
+    overflow:hidden;          /* crop when zoomed in */
   }
 
-  /* Click-only navigation; PageFlip stays at base/FIT, images scale */
-  #book{pointer-events:none}
-  #book img{
-    display:block;
-    width:100%;
-    height:100%;
+  /* Fixed-size box equal to the book's native page size; we scale this */
+  #scaleBox{
     transform-origin: top center;
-    transform: scale(var(--zoom));
     will-change: transform;
+    display:flex;align-items:center;justify-content:center;
   }
 
+  /* PageFlip element itself stays native size; no dragging (click zones only) */
+  #book{pointer-events:none}
   #status{position:absolute;left:20px;top:14px;color:#9ca3af;font-size:13px}
 
   /* Click zones (left/right) */
-  .nav-overlay{position:absolute;inset:16px 16px 72px 16px;z-index:3;display:grid;grid-template-columns:1fr 1fr}
+  .nav-overlay{position:absolute;inset:16px 16px 76px 16px;z-index:3;display:grid;grid-template-columns:1fr 1fr}
   .zone{height:100%}
   .left{cursor:w-resize}
   .right{cursor:e-resize}
 
-  /* Control dock (we measure its height for fit) */
+  /* Controls dock (we measure its height for fit) */
   .dock{
     position:absolute;left:16px;right:16px;bottom:16px;z-index:4;
     display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
@@ -70,8 +68,8 @@
 
   @media (max-width:640px){
     .stage{padding:6px}
-    #frame{padding:12px 12px 76px 12px}
-    #bookWrap{inset:12px 12px 76px 12px}
+    #frame{padding:12px 12px 80px 12px}
+    #bookWrap{inset:12px 12px 80px 12px}
     .dock{left:12px;right:12px;bottom:12px;padding:6px}
     .page{width:48px}
   }
@@ -87,7 +85,9 @@
   <div class="stage">
     <div id="flipRoot">
       <div id="frame">
-        <div id="bookWrap"><div id="book"></div></div>
+        <div id="bookWrap">
+          <div id="scaleBox"><div id="book"></div></div>
+        </div>
         <div id="status">Loading…</div>
 
         <!-- click-only navigation -->
@@ -129,6 +129,7 @@
   const flipRoot=document.getElementById('flipRoot');
   const frameEl =document.getElementById('frame');
   const bookWrap=document.getElementById('bookWrap');
+  const scaleBox=document.getElementById('scaleBox');
   const bookEl  =document.getElementById('book');
   const statusEl=document.getElementById('status');
   const dock    =document.getElementById('dock');
@@ -166,7 +167,7 @@
     pageLabel.textContent=`Page ${curr} / ${total}`;
   }
 
-  // Compute usable size from the actual outer container + live paddings + dock height
+  // Visible area (live) minus paddings + dock height
   function availableSize(){
     const cs = window.getComputedStyle(frameEl);
     const padT = parseInt(cs.paddingTop)    || 0;
@@ -185,35 +186,32 @@
     return Math.min(cw/base.w, ch/base.h);
   }
 
-  // Apply zoom by scaling the page IMAGES; keep PageFlip at FIT size
+  // Scale the wrapper; keep PageFlip at native size (base.w x base.h)
   function applyZoom(){
     if(!pageFlip) return;
     const fit = getFitScale();
-    const scaledW = Math.round(base.w * fit);
-    const scaledH = Math.round(base.h * fit);
+    const scale = fit * zoomFactor;
 
-    // Keep book at FIT size so Sites reflow isn't needed
-    pageFlip.update({
-      width:  scaledW,
-      height: scaledH,
-      usePortrait:true, showCover:false, size:"fixed"
-    });
+    // Ensure wrapper reserves the native size (so Sites' layout doesn't fight us)
+    scaleBox.style.width  = base.w + "px";
+    scaleBox.style.height = base.h + "px";
+    scaleBox.style.transform = `scale(${scale})`;
 
-    // Zoom is a multiplier applied only to images
-    document.documentElement.style.setProperty('--zoom', String(zoomFactor));
+    // Center the scaled box in the available area
+    const {cw,ch}=availableSize();
+    const sw = base.w * scale;
+    const sh = base.h * scale;
+    bookWrap.style.width  = Math.max(sw, 0) + "px";
+    bookWrap.style.height = Math.max(sh, 0) + "px";
 
-    // Reserve the FIT box so nothing crops due to container constraints
-    bookWrap.style.width  = scaledW + "px";
-    bookWrap.style.height = scaledH + "px";
-
-    // Label
+    // Update label (relative to Fit)
     zoomLabel.textContent =
       Math.abs(zoomFactor - 1) < 0.01 ? "Fit" : Math.round(zoomFactor * 100) + "%";
   }
 
   function setZoomFactor(f){
     zoomFactor = clamp(f, 0.5, 2.5);
-    requestAnimationFrame(applyZoom);   // defer until layout settles
+    requestAnimationFrame(applyZoom);
   }
 
   async function renderPdfPageToImage(pdf, n){
@@ -242,6 +240,7 @@
         if(i%4===0) setStatus(`Rendering… ${i}/${total}`);
       }
 
+      // Initialize PageFlip at native size (no resizing later)
       bookEl.innerHTML="";
       pageFlip=new St.PageFlip(bookEl,{
         width:base.w, height:base.h,
@@ -282,7 +281,7 @@
       zoomInBtn.onclick  = () => setZoomFactor(zoomFactor + 0.1);
       zoomOutBtn.onclick = () => setZoomFactor(zoomFactor - 0.1);
 
-      // --- Triggers that work inside Google Sites ---
+      // --- Auto-fit triggers that work inside Google Sites ---
       const ro = new ResizeObserver(() => applyZoom());
       ro.observe(flipRoot);
       ro.observe(bookWrap);
@@ -291,9 +290,7 @@
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', () => requestAnimationFrame(applyZoom));
       }
-
       window.addEventListener('orientationchange', () => setTimeout(applyZoom, 120));
-
       if (document.fonts && document.fonts.ready) document.fonts.ready.then(applyZoom);
 
       // Light polling guard for odd Sites transitions
